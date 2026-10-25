@@ -1,0 +1,11 @@
+{
+  "name": "TrackBridge — Приёмка",
+  "short_name": "TrackBridge",
+  "start_url": "/warehouse/scan",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

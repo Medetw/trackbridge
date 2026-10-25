@@ -1,0 +1,19 @@
+{% if error %}
+<article class="rounded-xl border-l-4 border-red-500 bg-red-50 p-3 text-sm">
+  <p class="font-semibold text-red-800">✗ {% if code %}<span class="font-mono">{{ code }}</span>{% else %}Ошибка{% endif %}</p>
+  <p class="text-red-700">{{ error }}</p>
+</article>
+{% else %}
+<article class="rounded-xl border-l-4 {{ 'border-emerald-500 bg-emerald-50' if status_changed else 'border-amber-400 bg-amber-50' }} p-3 text-sm">
+  <p class="flex items-center justify-between font-semibold">
+    <span class="font-mono">{{ parcel.tracking_code }}</span>
+    <span>{{ '✓ Принято' if status_changed else '↻ Уже принято, данные обновлены' }}</span>
+  </p>
+  <p class="text-slate-700">{{ parcel.client_name }} · {{ status_labels[parcel.status] }}</p>
+  <p class="text-slate-500">
+    {% if parcel.weight_kg %}{{ '%g' % parcel.weight_kg }} кг{% else %}вес не указан{% endif %}
+    {% if parcel.volume_cbm %} · {{ '%g' % parcel.volume_cbm }} м³{% endif %}
+    {% if parcel.warehouse %} · {{ parcel.warehouse.name }}{% endif %}
+  </p>
+</article>
+{% endif %}
