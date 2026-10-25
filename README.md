@@ -12,6 +12,7 @@ docker compose up --build     # runs migrations, then serves on :8000
 ```
 
 - Scanner PWA: http://localhost:8000/warehouse/scan (⚙️ → enter API key, worker ID, warehouse)
+- Admin UI (register parcels, browse/search recent ones): http://localhost:8000/admin. It shares the API key and worker ID stored in the browser with the scanner page.
 - API docs: http://localhost:8000/docs
 
 The camera scanner needs **HTTPS** on phones (browser rule). Put Caddy/nginx/Cloudflare Tunnel in front for production. A USB/Bluetooth barcode scanner works without HTTPS: scan → Enter jumps to weight → Enter submits.
@@ -31,6 +32,7 @@ export DATABASE_URL=postgresql+asyncpg://trackbridge:trackbridge@localhost:5432/
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET  | `/warehouse/scan` | — (key entered in UI) | Mobile scanner page |
+| GET  | `/admin` | — (key entered in UI) | Admin page: register parcels, search recent ones |
 | POST | `/api/v1/parcels/receive` | `X-API-Key` | Scan: set weight/volume, status → `received_at_china_wh`, notify |
 | GET  | `/api/v1/parcels/track/{code}` | public | Status + history (no PII) |
 | POST | `/api/v1/parcels` | `X-API-Key` | Register a parcel (client phone/name) |
@@ -61,5 +63,5 @@ Each channel turns on when its env vars are set (see `.env.example`). A failure 
 ## Known MVP limitations / next steps
 - Notifications run as FastAPI `BackgroundTasks` after commit. If the process restarts between commit and send, that notification is lost. Upgrade path: write an `outbox` row in the same transaction and drain it with a worker.
 - One shared API key per device and no per-worker accounts. Rotate keys via `API_KEYS` (comma-separated, several may be valid at once).
-- No admin UI yet for registering parcels or changing statuses. Use `/docs` or the API.
+- The admin UI registers and lists parcels only. Changing a status past "received" (in transit, customs, …) and creating warehouses still go through `/docs` or the API.
 - Tailwind is loaded from its play CDN (fine for an internal tool; switch to the standalone CLI if page weight matters).

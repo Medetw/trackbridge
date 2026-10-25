@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -149,4 +149,17 @@ async def list_parcels_by_phone(session: AsyncSession, phone: str, *, active_onl
     stmt = select(Parcel).where(Parcel.client_phone == phone).order_by(Parcel.created_at.desc())
     if active_only:
         stmt = stmt.where(Parcel.status != ParcelStatus.delivered)
+    return list(await session.scalars(stmt))
+
+
+async def list_recent_parcels(session: AsyncSession, *, query: str | None = None, limit: int = 50) -> list[Parcel]:
+    stmt = select(Parcel).order_by(Parcel.created_at.desc(), Parcel.id.desc()).limit(limit)
+    if query:
+        stmt = stmt.where(
+            or_(
+                Parcel.tracking_code.icontains(query, autoescape=True),
+                Parcel.client_name.icontains(query, autoescape=True),
+                Parcel.client_phone.icontains(query, autoescape=True),
+            )
+        )
     return list(await session.scalars(stmt))

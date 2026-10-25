@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.api import parcels, telegram_webhook, warehouse
+from app.api import admin, parcels, telegram_webhook, warehouse
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.errors import register_error_handlers
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(parcels.public)
     app.include_router(parcels.protected)
     app.include_router(warehouse.router)
+    app.include_router(admin.router)
     app.include_router(telegram_webhook.router)
     app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"), name="static")
 

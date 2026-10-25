@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Посылки · TrackBridge{% endblock %}
+{% block head %}
+<script>
+  // Same browser-side credentials as the scanner page (shared localStorage keys).
+  function tbHeaders() {
+    const load = k => { try { return localStorage.getItem(k) ?? "" } catch { return "" } };
+    return { "X-API-Key": load("tb.apiKey"), "X-Worker-Id": load("tb.workerId") };
+  }
+  function admin() {
+    const load = k => { try { return localStorage.getItem(k) ?? "" } catch { return "" } };
+    const save = (k, v) => { try { localStorage.setItem(k, v) } catch {} };
+    return {
+      apiKey: load("tb.apiKey"),
+      workerId: load("tb.workerId"),
+      showSettings: false,
+      init() {
+        this.showSettings = !this.apiKey;
+        this.$watch("apiKey", v => { save("tb.apiKey", v); htmx.trigger(document.body, "parcels-changed"); });
+        this.$watch("workerId", v => save("tb.workerId", v));
+      },
+      afterSubmit(event) {
+        if (event.detail.successful) this.$refs.form.reset();
+        this.$refs.code.focus();
+      },
+    };
+  }
+</script>
+<style>[x-cloak]{display:none!important}</style>
+{% endblock %}
+
+{% block body %}
+<main x-data="admin()" class="mx-auto max-w-2xl px-4 pb-10" style="padding-top: max(1rem, env(safe-area-inset-top))">
+  <header class="mb-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold">Посылки</h1>
+      <p class="text-xs text-slate-500"><a href="/warehouse/scan" class="underline">← Приёмка на складе</a></p>
+    </div>
+    <button type="button" @click="showSettings = !showSettings"
+            class="rounded-lg bg-white px-3 py-2 text-lg shadow-sm" aria-label="Настройки">⚙️</button>
+  </header>
+
+  <section x-show="showSettings" x-cloak class="mb-4 space-y-3 rounded-xl bg-white p-4 shadow-sm">
+    <label class="block text-sm font-medium">API-ключ
+      <input x-model="apiKey" type="password" autocomplete="off"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+    <label class="block text-sm font-medium">Ваше имя / ID (попадёт в историю статусов)
+      <input x-model="workerId" type="text" maxlength="100"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+    <button type="button" @click="showSettings = false"
+            class="w-full rounded-lg bg-slate-900 py-2 font-medium text-white">Готово</button>
+  </section>
+
+  <form x-ref="form" hx-post="/admin/parcels" hx-target="#result" hx-swap="innerHTML"
+        hx-headers="js:tbHeaders()" @htmx:after-request="afterSubmit($event)"
+        hx-disabled-elt="find button[type=submit]"
+        class="space-y-3 rounded-xl bg-white p-4 shadow-sm">
+    <h2 class="font-semibold">Новая посылка</h2>
+    <label class="block text-sm font-medium">Трек-код
+      <input x-ref="code" name="tracking_code" required autocomplete="off" autocapitalize="characters"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono uppercase">
+    </label>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="block text-sm font-medium">Имя клиента
+        <input name="client_name" required maxlength="200" autocomplete="off"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <label class="block text-sm font-medium">Телефон
+        <input name="client_phone" required type="tel" inputmode="tel" placeholder="+7 701 123 45 67" autocomplete="off"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+    </div>
+    <label class="block text-sm font-medium">Склад
+      <select name="warehouse_id" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+        <option value="">— не указан —</option>
+        {% for w in warehouses %}
+        <option value="{{ w.id }}">{{ w.name }}{% if w.location %} ({{ w.location }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit"
+            class="w-full rounded-lg bg-slate-900 py-3 font-semibold text-white active:bg-slate-700 disabled:opacity-50">
+      Зарегистрировать
+    </button>
+    <div id="result" aria-live="polite"></div>
+  </form>
+
+  <section class="mt-6 rounded-xl bg-white p-4 shadow-sm">
+    <div class="mb-2 flex items-center justify-between gap-3">
+      <h2 class="font-semibold">Последние посылки</h2>
+      <input id="q" name="q" type="search" placeholder="Поиск: код, имя, телефон" autocomplete="off"
+             hx-get="/admin/parcels" hx-trigger="input changed delay:300ms, search"
+             hx-target="#rows" hx-headers="js:tbHeaders()"
+             class="w-56 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div id="rows" hx-get="/admin/parcels" hx-trigger="load, parcels-changed from:body"
+         hx-include="#q" hx-headers="js:tbHeaders()"></div>
+  </section>
+</main>
+{% endblock %}

@@ -1,27 +1,18 @@
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, Security
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings
 from app.deps import DispatcherDep, SessionDep, WorkerDep
 from app.errors import DomainError
-from app.notifications.messages import STATUS_LABELS_RU
 from app.schemas import ParcelReceive
 from app.security import api_key_header, is_valid_api_key
 from app.services import parcels as service
-
-templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
-templates.env.globals["status_labels"] = STATUS_LABELS_RU
+from app.templating import blank_to_none, templates
 
 router = APIRouter(prefix="/warehouse", tags=["warehouse-ui"], include_in_schema=False)
-
-
-def _blank_to_none(value: str | None) -> str | None:
-    return value.strip() if value and value.strip() else None
 
 
 @router.get("/scan", response_class=HTMLResponse)
@@ -56,9 +47,9 @@ async def scan_submit(
     try:
         data = ParcelReceive(
             tracking_code=tracking_code,
-            weight_kg=_blank_to_none(weight_kg),  # type: ignore[arg-type]
-            volume_cbm=_blank_to_none(volume_cbm),  # type: ignore[arg-type]
-            warehouse_id=_blank_to_none(warehouse_id),  # type: ignore[arg-type]
+            weight_kg=blank_to_none(weight_kg),  # type: ignore[arg-type]
+            volume_cbm=blank_to_none(volume_cbm),  # type: ignore[arg-type]
+            warehouse_id=blank_to_none(warehouse_id),  # type: ignore[arg-type]
         )
     except ValidationError as exc:
         fields = ", ".join(str(e["loc"][0]) for e in exc.errors())
