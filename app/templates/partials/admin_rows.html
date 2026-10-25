@@ -1,17 +1,33 @@
 {% if error %}
-<p class="rounded-xl bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
-{% elif not parcels %}
+<p class="mb-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
+{% endif %}
+{% if parcels is defined %}
+{% if not parcels %}
 <p class="p-3 text-sm text-slate-500">{% if q %}Ничего не найдено по «{{ q }}».{% else %}Посылок пока нет.{% endif %}</p>
 {% else %}
 <ul class="divide-y divide-slate-100">
   {% for p in parcels %}
+  {% set nxt = p.status.next %}
   <li class="flex items-center justify-between gap-3 py-2">
     <div class="min-w-0">
       <p class="font-mono text-sm font-semibold">{{ p.tracking_code }}</p>
       <p class="truncate text-xs text-slate-500">{{ p.client_name }} · {{ p.client_phone }}</p>
     </div>
-    <span class="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs">{{ status_labels[p.status] }}</span>
+    <div class="flex shrink-0 flex-col items-end gap-1">
+      <span class="rounded-full bg-slate-100 px-2 py-1 text-xs">{{ status_labels[p.status] }}</span>
+      {% if nxt %}
+      <button type="button"
+              hx-post="/admin/parcels/{{ p.tracking_code }}/status" hx-vals='{"status": "{{ nxt.value }}"}'
+              hx-include="#q" hx-target="#rows" hx-headers="js:tbHeaders()"
+              hx-confirm="Перевести {{ p.tracking_code }} в статус «{{ status_labels[nxt] }}»? Клиент получит уведомление."
+              hx-disabled-elt="this"
+              class="rounded-lg bg-slate-900 px-2 py-1 text-xs font-medium text-white active:bg-slate-700 disabled:opacity-50">
+        → {{ status_labels[nxt] }}
+      </button>
+      {% endif %}
+    </div>
   </li>
   {% endfor %}
 </ul>
+{% endif %}
 {% endif %}

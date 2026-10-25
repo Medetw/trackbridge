@@ -23,6 +23,11 @@ class ParcelStatus(str, enum.Enum):
     def rank(self) -> int:
         return list(ParcelStatus).index(self)
 
+    @property
+    def next(self) -> "ParcelStatus | None":
+        statuses = list(ParcelStatus)
+        return statuses[self.rank + 1] if self.rank + 1 < len(statuses) else None
+
 
 class Warehouse(Base):
     __tablename__ = "warehouses"

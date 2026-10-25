@@ -1,12 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, Security
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings
-from app.deps import SessionDep, WorkerDep
+from app.deps import DispatcherDep, SessionDep, WorkerDep
 from app.errors import DomainError
+from app.models import ParcelStatus
 from app.schemas import ParcelCreate
 from app.security import api_key_header, is_valid_api_key
 from app.services import parcels as service
@@ -23,6 +24,16 @@ async def admin_page(request: Request, session: SessionDep) -> HTMLResponse:
     return templates.TemplateResponse(request, "admin.html", {"warehouses": warehouses})
 
 
+async def _rows_response(
+    request: Request, session: SessionDep, q: str, *, error: str | None = None, status_code: int = 200
+) -> HTMLResponse:
+    q = q.strip()
+    parcels = await service.list_recent_parcels(session, query=q or None)
+    return templates.TemplateResponse(
+        request, "partials/admin_rows.html", {"parcels": parcels, "q": q, "error": error}, status_code=status_code
+    )
+
+
 @router.get("/parcels", response_class=HTMLResponse)
 async def parcel_rows(
     request: Request,
@@ -33,8 +44,34 @@ async def parcel_rows(
 ) -> HTMLResponse:
     if not is_valid_api_key(api_key, settings):
         return templates.TemplateResponse(request, "partials/admin_rows.html", {"error": BAD_KEY}, status_code=401)
-    parcels = await service.list_recent_parcels(session, query=q.strip() or None)
-    return templates.TemplateResponse(request, "partials/admin_rows.html", {"parcels": parcels, "q": q.strip()})
+    return await _rows_response(request, session, q)
+
+
+@router.post("/parcels/{tracking_code}/status", response_class=HTMLResponse)
+async def change_status(
+    tracking_code: str,
+    request: Request,
+    session: SessionDep,
+    worker: WorkerDep,
+    dispatcher: DispatcherDep,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+    api_key: Annotated[str | None, Security(api_key_header)],
+    status: Annotated[str, Form()] = "",
+    q: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """HTMX twin of POST /api/v1/parcels/{code}/status: re-renders the (filtered) list instead of returning JSON."""
+    if not is_valid_api_key(api_key, settings):
+        return templates.TemplateResponse(request, "partials/admin_rows.html", {"error": BAD_KEY}, status_code=401)
+    try:
+        new_status = ParcelStatus(status)
+        _, event = await service.update_status(session, tracking_code, new_status, worker)
+    except ValueError:
+        return await _rows_response(request, session, q, error=f"Неизвестный статус: {status}", status_code=422)
+    except DomainError as exc:
+        return await _rows_response(request, session, q, error=exc.message, status_code=exc.status_code)
+    background.add_task(dispatcher.dispatch, event)
+    return await _rows_response(request, session, q)
 
 
 @router.post("/parcels", response_class=HTMLResponse)

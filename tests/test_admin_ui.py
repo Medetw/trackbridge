@@ -67,3 +67,58 @@ async def test_admin_list_requires_key(client: httpx.AsyncClient, parcel: dict) 
     resp = await client.get("/admin/parcels", headers={"X-API-Key": ""})
     assert resp.status_code == 401
     assert "YW-0001" not in resp.text
+
+
+async def test_list_shows_next_status_button(client: httpx.AsyncClient, parcel: dict) -> None:
+    resp = await client.get("/admin/parcels")
+    assert 'hx-post="/admin/parcels/YW-0001/status"' in resp.text
+    assert "&#34;status&#34;: &#34;received_at_china_wh&#34;" in resp.text or '"status": "received_at_china_wh"' in resp.text
+
+    await client.post("/api/v1/parcels/YW-0001/status", json={"status": "delivered"})
+    done = await client.get("/admin/parcels")
+    assert "YW-0001" in done.text and "hx-post" not in done.text
+
+
+async def test_admin_advances_status_and_notifies(
+    client: httpx.AsyncClient, parcel: dict, notifier: RecordingNotifier
+) -> None:
+    resp = await client.post(
+        "/admin/parcels/yw-0001/status",
+        data={"status": "received_at_china_wh", "q": ""},
+        headers={"X-Worker-Id": "manager1"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert "Принята на складе в Китае" in resp.text
+    assert 'hx-vals' in resp.text and "in_transit" in resp.text  # next button now targets in_transit
+
+    assert [e.new_status.value for e in notifier.events] == ["received_at_china_wh"]
+    detail = (await client.get("/api/v1/parcels/YW-0001")).json()
+    assert detail["history"][-1]["changed_by"] == "manager1"
+
+
+async def test_admin_status_keeps_search_filter(client: httpx.AsyncClient, parcel: dict) -> None:
+    await client.post(
+        "/admin/parcels", data={"tracking_code": "GZ-9", "client_phone": "+77015550011", "client_name": "Ерлан"}
+    )
+    resp = await client.post("/admin/parcels/GZ-9/status", data={"status": "received_at_china_wh", "q": "GZ-"})
+    assert "GZ-9" in resp.text and "YW-0001" not in resp.text
+
+
+async def test_admin_status_errors(client: httpx.AsyncClient, parcel: dict, notifier: RecordingNotifier) -> None:
+    url = "/admin/parcels/YW-0001/status"
+
+    bad_key = await client.post(url, data={"status": "customs"}, headers={"X-API-Key": "nope"})
+    assert bad_key.status_code == 401 and "API-ключ" in bad_key.text
+
+    bogus = await client.post(url, data={"status": "teleported"})
+    assert bogus.status_code == 422 and "Неизвестный статус" in bogus.text and "YW-0001" in bogus.text
+
+    missing = await client.post("/admin/parcels/NOPE-1/status", data={"status": "customs"})
+    assert missing.status_code == 404 and "NOPE-1" in missing.text
+
+    assert (await client.post(url, data={"status": "customs"})).status_code == 200
+    stale = await client.post(url, data={"status": "in_transit"})  # e.g. a second tab with an outdated list
+    assert stale.status_code == 409 and "only move forward" in stale.text
+    assert "На таможне" in stale.text  # list is refreshed to the real state
+
+    assert [e.new_status.value for e in notifier.events] == ["customs"]
