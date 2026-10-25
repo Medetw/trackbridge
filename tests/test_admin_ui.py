@@ -122,3 +122,44 @@ async def test_admin_status_errors(client: httpx.AsyncClient, parcel: dict, noti
     assert "На таможне" in stale.text  # list is refreshed to the real state
 
     assert [e.new_status.value for e in notifier.events] == ["customs"]
+
+
+async def test_admin_page_has_warehouse_section(client: httpx.AsyncClient, parcel: dict) -> None:
+    resp = await client.get("/admin")
+    assert 'hx-post="/admin/warehouses"' in resp.text
+    assert "(Yiwu)</option>" in resp.text  # parcel form's select
+    assert '<span class="text-slate-500">· Yiwu</span>' in resp.text  # warehouse list
+
+
+async def test_admin_creates_warehouse(client: httpx.AsyncClient, notifier: RecordingNotifier) -> None:
+    resp = await client.post("/admin/warehouses", data={"name": "  Guangzhou  ", "location": "Baiyun"})
+    assert resp.status_code == 200, resp.text
+    assert "Guangzhou" in resp.text and "Baiyun" in resp.text
+    assert resp.headers["HX-Trigger"] == "warehouses-changed"
+
+    api = (await client.get("/api/v1/warehouses")).json()
+    assert [w["name"] for w in api] == ["Guangzhou"]  # trimmed
+
+
+async def test_admin_warehouse_errors(client: httpx.AsyncClient, parcel: dict) -> None:
+    bad_key = await client.post("/admin/warehouses", data={"name": "X"}, headers={"X-API-Key": "nope"})
+    assert bad_key.status_code == 401 and "API-ключ" in bad_key.text
+    assert "HX-Trigger" not in bad_key.headers
+
+    dup = await client.post("/admin/warehouses", data={"name": "义乌 1号仓"})
+    assert dup.status_code == 409 and "already exists" in dup.text
+    assert "HX-Trigger" not in dup.headers
+    assert dup.text.count("义乌 1号仓") == 2  # error message + the existing list is still shown
+
+    blank = await client.post("/admin/warehouses", data={"name": "   "})
+    assert blank.status_code == 422 and "название" in blank.text
+
+
+async def test_warehouse_options_keep_selection(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    resp = await client.get("/admin/warehouses/options", params={"warehouse_id": str(wid)}, headers={"X-API-Key": ""})
+    assert resp.status_code == 200
+    assert f'<option value="{wid}" selected>' in resp.text
+
+    none_selected = await client.get("/admin/warehouses/options")
+    assert "selected" not in none_selected.text

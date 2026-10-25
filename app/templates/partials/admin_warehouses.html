@@ -1,0 +1,12 @@
+{% if error %}
+<p class="mb-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
+{% endif %}
+{% if not warehouses %}
+<p class="text-sm text-slate-500">Складов пока нет.</p>
+{% else %}
+<ul class="divide-y divide-slate-100 text-sm">
+  {% for w in warehouses %}
+  <li class="py-2"><span class="font-medium">{{ w.name }}</span>{% if w.location %} <span class="text-slate-500">· {{ w.location }}</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}

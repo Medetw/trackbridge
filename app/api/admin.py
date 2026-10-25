@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.deps import DispatcherDep, SessionDep, WorkerDep
 from app.errors import DomainError
 from app.models import ParcelStatus
-from app.schemas import ParcelCreate
+from app.schemas import ParcelCreate, WarehouseCreate
 from app.security import api_key_header, is_valid_api_key
 from app.services import parcels as service
 from app.templating import blank_to_none, templates
@@ -113,3 +113,52 @@ async def register_parcel(
     return templates.TemplateResponse(
         request, "partials/admin_result.html", {"parcel": parcel}, headers={"HX-Trigger": "parcels-changed"}
     )
+
+
+async def _warehouses_response(
+    request: Request, session: SessionDep, *, error: str | None = None, status_code: int = 200, trigger: bool = False
+) -> HTMLResponse:
+    warehouses = await service.list_warehouses(session)
+    return templates.TemplateResponse(
+        request,
+        "partials/admin_warehouses.html",
+        {"warehouses": warehouses, "error": error},
+        status_code=status_code,
+        headers={"HX-Trigger": "warehouses-changed"} if trigger else None,
+    )
+
+
+@router.get("/warehouses/options", response_class=HTMLResponse)
+async def warehouse_options(request: Request, session: SessionDep, warehouse_id: str = "") -> HTMLResponse:
+    """<option> list for the parcel form's select (same data the page already renders without a key)."""
+    warehouses = await service.list_warehouses(session)
+    return templates.TemplateResponse(
+        request,
+        "partials/admin_warehouse_options.html",
+        {"warehouses": warehouses, "selected_id": warehouse_id},
+    )
+
+
+@router.post("/warehouses", response_class=HTMLResponse)
+async def create_warehouse(
+    request: Request,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    api_key: Annotated[str | None, Security(api_key_header)],
+    name: Annotated[str, Form()] = "",
+    location: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """HTMX twin of POST /api/v1/warehouses: re-renders the warehouse list instead of returning JSON."""
+    if not is_valid_api_key(api_key, settings):
+        return await _warehouses_response(request, session, error=BAD_KEY, status_code=401)
+    try:
+        data = WarehouseCreate(name=name, location=location)
+    except ValidationError as exc:
+        labels = {"name": "название", "location": "расположение"}
+        fields = ", ".join(labels.get(str(e["loc"][0]), str(e["loc"][0])) for e in exc.errors())
+        return await _warehouses_response(request, session, error=f"Проверьте поля: {fields}", status_code=422)
+    try:
+        await service.create_warehouse(session, data)
+    except DomainError as exc:
+        return await _warehouses_response(request, session, error=exc.message, status_code=exc.status_code)
+    return await _warehouses_response(request, session, trigger=True)

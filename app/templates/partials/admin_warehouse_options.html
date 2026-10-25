@@ -1,0 +1,4 @@
+<option value="">— не указан —</option>
+{% for w in warehouses %}
+<option value="{{ w.id }}"{% if selected_id is defined and selected_id == w.id|string %} selected{% endif %}>{{ w.name }}{% if w.location %} ({{ w.location }}){% endif %}</option>
+{% endfor %}

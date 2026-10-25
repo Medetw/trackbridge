@@ -12,7 +12,7 @@ docker compose up --build     # runs migrations, then serves on :8000
 ```
 
 - Scanner PWA: http://localhost:8000/warehouse/scan (⚙️ → enter API key, worker ID, warehouse)
-- Admin UI (register parcels, browse/search recent ones, advance status): http://localhost:8000/admin. It shares the API key and worker ID stored in the browser with the scanner page.
+- Admin UI (register parcels, browse/search recent ones, advance status, add warehouses): http://localhost:8000/admin. It shares the API key and worker ID stored in the browser with the scanner page.
 - API docs: http://localhost:8000/docs
 
 The camera scanner needs **HTTPS** on phones (browser rule). Put Caddy/nginx/Cloudflare Tunnel in front for production. A USB/Bluetooth barcode scanner works without HTTPS: scan → Enter jumps to weight → Enter submits.
@@ -63,5 +63,5 @@ Each channel turns on when its env vars are set (see `.env.example`). A failure 
 ## Known MVP limitations / next steps
 - Notifications run as FastAPI `BackgroundTasks` after commit. If the process restarts between commit and send, that notification is lost. Upgrade path: write an `outbox` row in the same transaction and drain it with a worker.
 - One shared API key per device and no per-worker accounts. Rotate keys via `API_KEYS` (comma-separated, several may be valid at once).
-- The admin UI registers parcels, lists/searches them, and advances each one to its next status (with a confirmation, since the client is notified). It can't skip statuses or create warehouses; use `/docs` or the API for those.
+- The admin UI registers parcels, lists/searches them, and advances each one to its next status (with a confirmation, since the client is notified). It can also create warehouses (collapsible "Склады" section). It can't skip statuses; use `/docs` or the API for that.
 - Tailwind is loaded from its play CDN (fine for an internal tool; switch to the standalone CLI if page weight matters).

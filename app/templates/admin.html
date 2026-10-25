@@ -73,11 +73,9 @@
       </label>
     </div>
     <label class="block text-sm font-medium">Склад
-      <select name="warehouse_id" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
-        <option value="">— не указан —</option>
-        {% for w in warehouses %}
-        <option value="{{ w.id }}">{{ w.name }}{% if w.location %} ({{ w.location }}){% endif %}</option>
-        {% endfor %}
+      <select name="warehouse_id" hx-get="/admin/warehouses/options" hx-trigger="warehouses-changed from:body"
+              class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+        {% include "partials/admin_warehouse_options.html" %}
       </select>
     </label>
     <button type="submit"
@@ -86,6 +84,30 @@
     </button>
     <div id="result" aria-live="polite"></div>
   </form>
+
+  <details class="mt-6 rounded-xl bg-white p-4 shadow-sm" {% if not warehouses %}open{% endif %}>
+    <summary class="cursor-pointer font-semibold">Склады</summary>
+    <form hx-post="/admin/warehouses" hx-target="#warehouses" hx-swap="innerHTML"
+          hx-headers="js:tbHeaders()" @htmx:after-request="if ($event.detail.successful) $el.reset()"
+          hx-disabled-elt="find button[type=submit]"
+          class="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <label class="block text-sm font-medium">Название
+        <input name="name" required maxlength="200" autocomplete="off" placeholder="义乌 1号仓"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <label class="block text-sm font-medium">Расположение
+        <input name="location" maxlength="300" autocomplete="off" placeholder="Yiwu"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <button type="submit"
+              class="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white active:bg-slate-700 disabled:opacity-50">
+        Добавить
+      </button>
+    </form>
+    <div id="warehouses" class="mt-3" aria-live="polite">
+      {% include "partials/admin_warehouses.html" %}
+    </div>
+  </details>
 
   <section class="mt-6 rounded-xl bg-white p-4 shadow-sm">
     <div class="mb-2 flex items-center justify-between gap-3">
