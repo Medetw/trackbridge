@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.errors import ConflictError, NotFoundError
 from app.models import Parcel, ParcelStatus, StatusHistory, Warehouse
-from app.schemas import ParcelCreate, ParcelReceive, WarehouseCreate
+from app.schemas import ParcelCreate, ParcelReceive, WarehouseCreate, WarehouseUpdate
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,32 @@ async def _get_warehouse(session: AsyncSession, warehouse_id: int) -> Warehouse:
     if warehouse is None:
         raise NotFoundError(f"Warehouse {warehouse_id} not found")
     return warehouse
+
+
+async def update_warehouse(session: AsyncSession, warehouse_id: int, data: WarehouseUpdate) -> Warehouse:
+    warehouse = await _get_warehouse(session, warehouse_id)
+    warehouse.name = data.name
+    warehouse.location = data.location
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise ConflictError(f"Warehouse '{data.name}' already exists") from None
+    return warehouse
+
+
+async def delete_warehouse(session: AsyncSession, warehouse_id: int) -> None:
+    """Refuses while parcels reference the warehouse, so we never lose where a parcel was received."""
+    warehouse = await _get_warehouse(session, warehouse_id)
+    assigned = await session.scalar(select(func.count()).select_from(Parcel).where(Parcel.warehouse_id == warehouse_id))
+    if assigned:
+        raise ConflictError(f"Cannot delete warehouse '{warehouse.name}': {assigned} parcel(s) are assigned to it")
+    await session.delete(warehouse)
+    try:
+        await session.commit()
+    except IntegrityError:  # a parcel was assigned between the check and the delete
+        await session.rollback()
+        raise ConflictError(f"Cannot delete warehouse '{warehouse.name}': parcels are assigned to it") from None
 
 
 # --- Parcels ---

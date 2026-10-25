@@ -12,6 +12,7 @@ from app.schemas import (
     TrackingOut,
     WarehouseCreate,
     WarehouseOut,
+    WarehouseUpdate,
 )
 from app.security import require_api_key
 from app.services import parcels as service
@@ -78,3 +79,18 @@ async def list_warehouses(session: SessionDep) -> object:
 @protected.post("/warehouses", response_model=WarehouseOut, status_code=status.HTTP_201_CREATED, tags=["admin"])
 async def create_warehouse(data: WarehouseCreate, session: SessionDep) -> object:
     return await service.create_warehouse(session, data)
+
+
+@protected.put("/warehouses/{warehouse_id}", response_model=WarehouseOut, tags=["admin"])
+async def update_warehouse(warehouse_id: int, data: WarehouseUpdate, session: SessionDep) -> object:
+    return await service.update_warehouse(session, warehouse_id, data)
+
+
+@protected.delete(
+    "/warehouses/{warehouse_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["admin"],
+    description="Fails with 409 while any parcel is assigned to the warehouse.",
+)
+async def delete_warehouse(warehouse_id: int, session: SessionDep) -> None:
+    await service.delete_warehouse(session, warehouse_id)

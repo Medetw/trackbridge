@@ -23,6 +23,10 @@ class WarehouseCreate(BaseModel):
     location: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] = ""
 
 
+class WarehouseUpdate(WarehouseCreate):
+    """Full replacement of name and location."""
+
+
 class WarehouseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

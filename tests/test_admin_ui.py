@@ -149,7 +149,8 @@ async def test_admin_warehouse_errors(client: httpx.AsyncClient, parcel: dict) -
     dup = await client.post("/admin/warehouses", data={"name": "义乌 1号仓"})
     assert dup.status_code == 409 and "already exists" in dup.text
     assert "HX-Trigger" not in dup.headers
-    assert dup.text.count("义乌 1号仓") == 2  # error message + the existing list is still shown
+    assert "Warehouse &#39;义乌 1号仓&#39; already exists" in dup.text  # error banner
+    assert '<span class="font-medium">义乌 1号仓</span>' in dup.text  # the existing list is still shown
 
     blank = await client.post("/admin/warehouses", data={"name": "   "})
     assert blank.status_code == 422 and "название" in blank.text
@@ -163,3 +164,69 @@ async def test_warehouse_options_keep_selection(client: httpx.AsyncClient, parce
 
     none_selected = await client.get("/admin/warehouses/options")
     assert "selected" not in none_selected.text
+
+
+async def _warehouse_id(client: httpx.AsyncClient, name: str) -> int:
+    return next(w["id"] for w in (await client.get("/api/v1/warehouses")).json() if w["name"] == name)
+
+
+async def test_warehouse_list_has_edit_and_delete_controls(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    resp = await client.get("/admin")
+    assert f'hx-post="/admin/warehouses/{wid}"' in resp.text
+    assert f'hx-post="/admin/warehouses/{wid}/delete"' in resp.text
+
+
+async def test_admin_renames_warehouse(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    resp = await client.post(f"/admin/warehouses/{wid}", data={"name": " Yiwu Hub ", "location": "Zhejiang"})
+    assert resp.status_code == 200, resp.text
+    assert "Yiwu Hub" in resp.text and "Zhejiang" in resp.text and "义乌 1号仓" not in resp.text
+    assert resp.headers["HX-Trigger"] == "warehouses-changed"
+    assert [w["name"] for w in (await client.get("/api/v1/warehouses")).json()] == ["Yiwu Hub"]
+
+
+async def test_admin_rename_errors(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    await client.post("/admin/warehouses", data={"name": "Guangzhou"})
+    url = f"/admin/warehouses/{wid}"
+
+    bad_key = await client.post(url, data={"name": "X"}, headers={"X-API-Key": "nope"})
+    assert bad_key.status_code == 401 and "API-ключ" in bad_key.text
+
+    dup = await client.post(url, data={"name": "Guangzhou"})
+    assert dup.status_code == 409 and "already exists" in dup.text and "HX-Trigger" not in dup.headers
+    assert "义乌 1号仓" in dup.text  # unchanged
+
+    blank = await client.post(url, data={"name": "  "})
+    assert blank.status_code == 422 and "название" in blank.text
+
+    missing = await client.post("/admin/warehouses/9999", data={"name": "Y"})
+    assert missing.status_code == 404 and "9999" in missing.text
+
+
+async def test_admin_deletes_unused_warehouse(client: httpx.AsyncClient, parcel: dict) -> None:
+    await client.post("/admin/warehouses", data={"name": "Guangzhou"})
+    gid = await _warehouse_id(client, "Guangzhou")
+    resp = await client.post(f"/admin/warehouses/{gid}/delete")
+    assert resp.status_code == 200 and "Guangzhou" not in resp.text and "义乌 1号仓" in resp.text
+    assert resp.headers["HX-Trigger"] == "warehouses-changed"
+
+
+async def test_admin_refuses_to_delete_warehouse_with_parcels(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    await client.post(
+        "/api/v1/parcels",
+        json={"tracking_code": "WH-1", "client_phone": "+77011112233", "client_name": "X", "warehouse_id": wid},
+    )
+    resp = await client.post(f"/admin/warehouses/{wid}/delete")
+    assert resp.status_code == 409 and "1 parcel(s)" in resp.text and "HX-Trigger" not in resp.headers
+    assert "义乌 1号仓" in resp.text  # still listed
+    assert len((await client.get("/api/v1/warehouses")).json()) == 1
+
+
+async def test_admin_delete_requires_key(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    resp = await client.post(f"/admin/warehouses/{wid}/delete", headers={"X-API-Key": ""})
+    assert resp.status_code == 401
+    assert len((await client.get("/api/v1/warehouses")).json()) == 1

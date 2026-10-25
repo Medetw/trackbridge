@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.deps import DispatcherDep, SessionDep, WorkerDep
 from app.errors import DomainError
 from app.models import ParcelStatus
-from app.schemas import ParcelCreate, WarehouseCreate
+from app.schemas import ParcelCreate, WarehouseCreate, WarehouseUpdate
 from app.security import api_key_header, is_valid_api_key
 from app.services import parcels as service
 from app.templating import blank_to_none, templates
@@ -139,6 +139,18 @@ async def warehouse_options(request: Request, session: SessionDep, warehouse_id:
     )
 
 
+WAREHOUSE_FIELD_LABELS = {"name": "название", "location": "расположение"}
+
+
+def _parse_warehouse(name: str, location: str) -> WarehouseCreate | str:
+    """Returns the validated payload, or a user-facing error message."""
+    try:
+        return WarehouseUpdate(name=name, location=location)
+    except ValidationError as exc:
+        fields = ", ".join(WAREHOUSE_FIELD_LABELS.get(str(e["loc"][0]), str(e["loc"][0])) for e in exc.errors())
+        return f"Проверьте поля: {fields}"
+
+
 @router.post("/warehouses", response_class=HTMLResponse)
 async def create_warehouse(
     request: Request,
@@ -151,14 +163,52 @@ async def create_warehouse(
     """HTMX twin of POST /api/v1/warehouses: re-renders the warehouse list instead of returning JSON."""
     if not is_valid_api_key(api_key, settings):
         return await _warehouses_response(request, session, error=BAD_KEY, status_code=401)
-    try:
-        data = WarehouseCreate(name=name, location=location)
-    except ValidationError as exc:
-        labels = {"name": "название", "location": "расположение"}
-        fields = ", ".join(labels.get(str(e["loc"][0]), str(e["loc"][0])) for e in exc.errors())
-        return await _warehouses_response(request, session, error=f"Проверьте поля: {fields}", status_code=422)
+    data = _parse_warehouse(name, location)
+    if isinstance(data, str):
+        return await _warehouses_response(request, session, error=data, status_code=422)
     try:
         await service.create_warehouse(session, data)
+    except DomainError as exc:
+        return await _warehouses_response(request, session, error=exc.message, status_code=exc.status_code)
+    return await _warehouses_response(request, session, trigger=True)
+
+
+@router.post("/warehouses/{warehouse_id}", response_class=HTMLResponse)
+async def update_warehouse(
+    warehouse_id: int,
+    request: Request,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    api_key: Annotated[str | None, Security(api_key_header)],
+    name: Annotated[str, Form()] = "",
+    location: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """HTMX twin of PUT /api/v1/warehouses/{id}."""
+    if not is_valid_api_key(api_key, settings):
+        return await _warehouses_response(request, session, error=BAD_KEY, status_code=401)
+    data = _parse_warehouse(name, location)
+    if isinstance(data, str):
+        return await _warehouses_response(request, session, error=data, status_code=422)
+    try:
+        await service.update_warehouse(session, warehouse_id, data)
+    except DomainError as exc:
+        return await _warehouses_response(request, session, error=exc.message, status_code=exc.status_code)
+    return await _warehouses_response(request, session, trigger=True)
+
+
+@router.post("/warehouses/{warehouse_id}/delete", response_class=HTMLResponse)
+async def delete_warehouse(
+    warehouse_id: int,
+    request: Request,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    api_key: Annotated[str | None, Security(api_key_header)],
+) -> HTMLResponse:
+    """HTMX twin of DELETE /api/v1/warehouses/{id}."""
+    if not is_valid_api_key(api_key, settings):
+        return await _warehouses_response(request, session, error=BAD_KEY, status_code=401)
+    try:
+        await service.delete_warehouse(session, warehouse_id)
     except DomainError as exc:
         return await _warehouses_response(request, session, error=exc.message, status_code=exc.status_code)
     return await _warehouses_response(request, session, trigger=True)

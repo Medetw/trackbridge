@@ -105,3 +105,50 @@ async def test_public_tracking_404(client: httpx.AsyncClient) -> None:
     resp = await client.get("/api/v1/parcels/track/UNKNOWN")
     assert resp.status_code == 404
     assert resp.json()["code"] == "not_found"
+
+
+async def test_api_renames_warehouse(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    resp = await client.put(f"/api/v1/warehouses/{wid}", json={"name": " Yiwu Hub ", "location": "Zhejiang"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"id": wid, "name": "Yiwu Hub", "location": "Zhejiang"}
+
+    await client.post("/api/v1/warehouses", json={"name": "Guangzhou"})
+    dup = await client.put(f"/api/v1/warehouses/{wid}", json={"name": "Guangzhou"})
+    assert dup.status_code == 409 and dup.json()["code"] == "conflict"
+
+    assert (await client.put("/api/v1/warehouses/9999", json={"name": "Z"})).status_code == 404
+    assert (await client.put(f"/api/v1/warehouses/{wid}", json={"name": ""})).status_code == 422
+
+
+async def test_rename_shows_in_public_tracking(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    await client.post("/api/v1/parcels/receive", json={"tracking_code": "YW-0001", "warehouse_id": wid})
+    await client.put(f"/api/v1/warehouses/{wid}", json={"name": "Yiwu Hub"})
+    body = (await client.get("/api/v1/parcels/track/YW-0001")).json()
+    assert body["warehouse"] == "Yiwu Hub"
+
+
+async def test_api_deletes_warehouse(client: httpx.AsyncClient, parcel: dict) -> None:
+    created = await client.post("/api/v1/warehouses", json={"name": "Guangzhou"})
+    gid = created.json()["id"]
+    resp = await client.delete(f"/api/v1/warehouses/{gid}")
+    assert resp.status_code == 204 and resp.content == b""
+    assert [w["name"] for w in (await client.get("/api/v1/warehouses")).json()] == ["义乌 1号仓"]
+    assert (await client.delete(f"/api/v1/warehouses/{gid}")).status_code == 404
+
+
+async def test_api_refuses_to_delete_warehouse_with_parcels(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    await client.post("/api/v1/parcels/receive", json={"tracking_code": "YW-0001", "warehouse_id": wid})
+    resp = await client.delete(f"/api/v1/warehouses/{wid}")
+    assert resp.status_code == 409
+    assert "1 parcel(s)" in resp.json()["detail"]
+    assert len((await client.get("/api/v1/warehouses")).json()) == 1
+
+
+async def test_warehouse_write_endpoints_require_key(client: httpx.AsyncClient, parcel: dict) -> None:
+    wid = parcel["warehouse_id"]
+    no_key = {"X-API-Key": ""}
+    assert (await client.put(f"/api/v1/warehouses/{wid}", json={"name": "X"}, headers=no_key)).status_code == 401
+    assert (await client.delete(f"/api/v1/warehouses/{wid}", headers=no_key)).status_code == 401
